@@ -18,6 +18,11 @@ interface ProfileData {
   phone: string;
 }
 
+const getSavedHostel = () => {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem('delivery_hostel') || '';
+};
+
 const normalizeCart = (value: string | null) => {
   if (!value) return {};
 
@@ -58,15 +63,18 @@ export default function CartPage() {
   const { user } = useAuth();
   const [cartItems, setCartItems] = useState<Record<string, CartItem>>({});
   const [profile, setProfile] = useState<ProfileData>({ name: '', phone: '' });
+  const [selectedHostel, setSelectedHostel] = useState('');
   const [deliveryCharge, setDeliveryCharge] = useState(9);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [cartHydrated, setCartHydrated] = useState(false);
+  const [checkoutError, setCheckoutError] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     setCartItems(normalizeCart(localStorage.getItem('delivery_cart')));
+    setSelectedHostel(getSavedHostel());
 
     const savedProfile = localStorage.getItem('delivery_profile');
     if (savedProfile) {
@@ -127,13 +135,20 @@ export default function CartPage() {
   const handleProceedToPayment = () => {
     if (cartEntries.length === 0) return;
 
+    const hostel = selectedHostel || getSavedHostel();
+    if (!hostel) {
+      setCheckoutError('Please select your hostel on the home page before checkout.');
+      return;
+    }
+
     const resolvedProfile = {
       name: profile.name || user?.name || '',
       phone: profile.phone || user?.phone || '',
-      address: '',
+      address: hostel,
     };
 
     if (typeof window !== 'undefined') {
+      localStorage.setItem('delivery_hostel', hostel);
       sessionStorage.setItem(
         'orderData',
         JSON.stringify({
@@ -147,6 +162,7 @@ export default function CartPage() {
     }
 
     setSubmitting(true);
+    setCheckoutError('');
     router.push('/payment');
   };
 
@@ -229,11 +245,19 @@ export default function CartPage() {
                 <span>Delivery Fee</span>
                 <span>Rs. {deliveryCharge}</span>
               </div>
+              <div className="flex justify-between gap-3 text-sm text-[var(--text-muted)]">
+                <span>Hostel</span>
+                <span className="text-right font-semibold text-[var(--text-primary)]">
+                  {selectedHostel || 'Not selected'}
+                </span>
+              </div>
               <div className="flex justify-between border-t border-[var(--border)] pt-3 text-base font-bold text-[var(--text-primary)]">
                 <span>Total</span>
                 <span className="text-[var(--primary)]">Rs. {total}</span>
               </div>
             </div>
+
+            {checkoutError && <p className="mt-3 text-sm text-red-600">{checkoutError}</p>}
 
             <div className="mt-4 flex flex-col gap-2 md:mt-5 md:flex-row md:gap-3">
               <Link href="/" className="btn-outline inline-flex w-full justify-center transition-all hover:bg-[var(--background)] md:w-auto">

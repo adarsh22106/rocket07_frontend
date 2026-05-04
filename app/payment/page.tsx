@@ -105,6 +105,10 @@ export default function PaymentPage() {
       return;
     }
     if (!orderData) return;
+    if (!orderData.address.trim()) {
+      setError('Please select your hostel on the home page before placing the order.');
+      return;
+    }
     if (!transactionId.trim()) {
       setError('Please enter transaction ID.');
       return;
@@ -239,6 +243,10 @@ export default function PaymentPage() {
           </div>
 
           <div className="order-summary space-y-2 md:space-y-3">
+            <div className="flex justify-between gap-3 text-sm text-[var(--text-muted)]">
+              <span>Hostel</span>
+              <span className="text-right font-semibold text-[var(--text-primary)]">{orderData.address}</span>
+            </div>
             <div className="flex justify-between text-sm text-[var(--text-muted)]">
               <span>Subtotal</span>
               <span>Rs. {orderData.subtotal}</span>
