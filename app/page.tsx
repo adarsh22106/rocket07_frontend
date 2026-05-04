@@ -1,10 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
 import { getItemsCatalog, ITEM_IMAGE_MAP, HOSTEL_OPTIONS, ItemsCatalog } from '@/data/items';
-import { orderAPI, configAPI } from '@/utils/api';
 
 interface SelectedItem {
   name: string;
@@ -12,6 +10,41 @@ interface SelectedItem {
   price: number;
   unit: string;
 }
+
+const normalizeCart = (value: string | null) => {
+  if (!value) return {};
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
+    return Object.entries(parsed).reduce<Record<string, SelectedItem>>((acc, [key, item]) => {
+      const cartItem = item as Partial<SelectedItem>;
+      const quantity = Number(cartItem.quantity);
+      const price = Number(cartItem.price);
+
+      if (
+        typeof key === 'string' &&
+        typeof cartItem.name === 'string' &&
+        typeof cartItem.unit === 'string' &&
+        Number.isFinite(quantity) &&
+        quantity > 0 &&
+        Number.isFinite(price)
+      ) {
+        acc[key] = {
+          name: cartItem.name,
+          quantity,
+          price,
+          unit: cartItem.unit,
+        };
+      }
+
+      return acc;
+    }, {});
+  } catch {
+    return {};
+  }
+};
 
 const buildImagePath = (fileName: string) => `/Item%20Images/${encodeURIComponent(fileName)}`;
 
@@ -62,75 +95,34 @@ function ItemImage({ itemName }: { itemName: string }) {
 }
 
 export default function HomePage() {
-  const router = useRouter();
-  const { user } = useAuth();
   const [itemsCatalog, setItemsCatalog] = useState<ItemsCatalog>({});
   const [selectedItems, setSelectedItems] = useState<{ [key: string]: SelectedItem }>({});
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    phone: user?.phone || '',
-    address: '',
-  });
-  const [config, setConfig] = useState({
-    deliveryCharge: 9,
-    isDeliveryClosed: false,
-  });
-  const [configLoading, setConfigLoading] = useState(true);
-  
+  const [selectedHostel, setSelectedHostel] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [cartHydrated, setCartHydrated] = useState(false);
+
   useEffect(() => {
-    async function loadConfig() {
-      try {
-        const { data } = await configAPI.getConfig();
-        setConfig({
-          deliveryCharge: data.data.delivery_charge,
-          isDeliveryClosed: data.data.is_delivery_closed,
-        });
-      } catch (error) {
-        console.error('Failed to load config:', error);
-        // Keep default values on error
-      } finally {
-        setConfigLoading(false);
-      }
+    if (typeof window === 'undefined') return;
+
+    setSelectedItems(normalizeCart(localStorage.getItem('delivery_cart')));
+
+    const savedHostel = localStorage.getItem('delivery_hostel');
+    if (savedHostel) {
+      setSelectedHostel(savedHostel);
     }
 
-    loadConfig();
+    setCartHydrated(true);
   }, []);
-
-  // Check if orders are closed for today
-  const ORDERS_CLOSED = config.isDeliveryClosed;
-
-  useEffect(() => {
-    if (user) {
-      setFormData((prev) => ({
-        ...prev,
-        name: user.name || prev.name,
-        phone: user.phone || prev.phone,
-      }));
-    }
-  }, [user]);
 
   useEffect(() => {
     async function loadCatalog() {
       const data = await getItemsCatalog();
       setItemsCatalog(data);
+      setLoading(false);
     }
 
     loadCatalog();
   }, []);
-
-  const subtotal = Object.values(selectedItems).reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0
-  );
-  const LAUNCH_DATE = '2026-05-02';
-  const [isLaunchDay, setIsLaunchDay] = useState(false);
-  useEffect(() => {
-    const today = new Date().toLocaleDateString('en-CA');
-    setIsLaunchDay(today === LAUNCH_DATE);
-  }, []);
-  const deliveryCharge = isLaunchDay ? 0 : config.deliveryCharge;
-  const total = subtotal + deliveryCharge;
 
   const handleItemToggle = (category: string, itemName: string, price: number, unit: string) => {
     const key = `${category}-${itemName}`;
@@ -154,96 +146,94 @@ export default function HomePage() {
     }));
   };
 
-  const handleProceedToPayment = () => {
-    if (ORDERS_CLOSED) {
-      alert('Orders for today are now closed. Thank you for your support! We\'ll be back tomorrow to serve you again.');
-      return;
-    }
-    
-    if (!user) {
-      alert('Please login first to place an order.');
-      router.push('/auth');
-      return;
-    }
-    if (!formData.name || !formData.phone || !formData.address) {
-      alert('Please fill all customer details');
-      return;
-    }
-    if (Object.keys(selectedItems).length === 0) {
-      alert('Please select at least one item');
-      return;
-    }
-    // Store form data and selected items in sessionStorage for payment page
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('orderData', JSON.stringify({
-        ...formData,
-        items: Object.values(selectedItems),
-        subtotal,
-        deliveryCharge,
-        total,
-      }));
-    }
-    router.push('/payment');
-  };
+  useEffect(() => {
+    if (typeof window === 'undefined' || !cartHydrated) return;
+    localStorage.setItem('delivery_cart', JSON.stringify(selectedItems));
+  }, [cartHydrated, selectedItems]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('delivery_hostel', selectedHostel);
+  }, [selectedHostel]);
+
+  const selectedCount = Object.keys(selectedItems).length;
 
   return (
-    <div>
-      {/* Customer Details Card */}
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">📋 Customer Details</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="label">Full Name *</label>
-            <input
-              type="text"
-              className="input-field"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Enter your name"
-            />
+    <div className="space-y-8">
+      {/* SECTION: Hero */}
+      <div className="hero-banner relative z-10">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-4 max-w-2xl">
+            <div className="inline-flex flex-col gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/85">
+                Hostel Delivery
+              </span>
+              <select
+                className="w-full max-w-[190px] rounded-full border border-white/30 bg-white/95 px-3 py-2 text-sm font-semibold text-[var(--text-primary)] outline-none"
+                value={selectedHostel}
+                onChange={(e) => setSelectedHostel(e.target.value)}
+              >
+                <option value="">Select hostel</option>
+                {HOSTEL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-2xl md:text-3xl font-extrabold leading-tight">
+                Fast Delivery for Hostel Life ⚡
+              </h2>
+              <p className="text-sm md:text-[14px] text-white/90 max-w-xl">
+                Snacks, groceries, beverages and daily essentials delivered in a clean, simple checkout flow.
+              </p>
+            </div>
           </div>
-          <div>
-            <label className="label">Phone Number *</label>
-            <input
-              type="tel"
-              className="input-field"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="Enter phone number"
-            />
+
+          <div className="flex flex-col items-start gap-3 lg:items-end">
+            <span className="inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold text-white">
+              {selectedCount} item{selectedCount === 1 ? '' : 's'} selected
+            </span>
+            <Link
+              href="/cart"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('delivery_cart', JSON.stringify(selectedItems));
+                }
+              }}
+              className="inline-flex w-full md:w-auto items-center justify-center rounded-[12px] bg-white px-5 py-3 text-[15px] font-bold text-[var(--accent)] transition-all duration-200 hover:bg-[var(--accent-bg)] hover:shadow-lg hover:scale-105 active:scale-95"
+            >
+              Open Cart
+            </Link>
           </div>
-        </div>
-        <div className="mt-4">
-          <label className="label">Delivery Address *</label>
-          <select
-            className="input-field"
-            value={formData.address}
-            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-          >
-            <option value="">Select Hostel</option>
-            {HOSTEL_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 
-      {/* Items Section */}
-      {Object.entries(itemsCatalog).map(([category, items]) => (
+      {/* SECTION: Items Section */}
+      {loading && (
+        <div className="card text-center py-10 text-[var(--text-muted)]">
+          Loading items...
+        </div>
+      )}
+
+      {!loading && Object.entries(itemsCatalog).map(([category, items]) => (
         <div key={category} className="card">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">
-            {category === "Non-Veg" ? "🥩" : "🛍️"} {category}
-          </h2>
-          {category === "Non-Veg" && (
-            <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-              <p className="text-sm text-orange-800 font-medium">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-extrabold text-[var(--text-primary)]">
+              {category === 'Non-Veg' ? '🥩' : '🛍️'} {category}
+            </h2>
+            <span className="text-[13px] font-semibold text-[var(--primary)]">See all</span>
+          </div>
+          {category === 'Non-Veg' && (
+            <div className="mb-4 rounded-[12px] border border-[var(--accent)] bg-[var(--accent-bg)] p-3">
+              <p className="text-sm text-[var(--primary-dark)] font-medium">
                 📦 Delivery of non-vegetarian products will be made separately at 5:30 PM.
               </p>
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
             {items.map((item) => {
               const key = `${category}-${item.name}`;
               const isSelected = !!selectedItems[key];
@@ -251,50 +241,57 @@ export default function HomePage() {
                 <div
                   key={key}
                   onClick={() => handleItemToggle(category, item.name, item.price, item.unit)}
-                  className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                  className={`relative min-w-0 cursor-pointer transition-all duration-250 hover:scale-[1.02] ${
                     isSelected
-                      ? 'border-primary-500 bg-primary-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
+                      ? 'border-[var(--primary)] bg-[var(--primary-bg)] shadow-md'
+                      : 'border-[var(--border)] hover:border-[var(--primary)] hover:shadow-md'
+                  } card`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <ItemImage itemName={item.name} />
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => {}}
-                        className="w-4 h-4 text-primary-600"
-                      />
-                      <span className="font-medium text-gray-800">{item.name}</span>
-                    </div>
-                    <span className="text-primary-600 font-semibold">₹{item.price}</span>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-sm text-gray-500">per {item.unit}</span>
-                    {isSelected && (
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleQuantityChange(key, selectedItems[key].quantity - 1);
-                          }}
-                          className="w-6 h-6 bg-gray-200 rounded flex items-center justify-center"
-                        >
-                          -
-                        </button>
-                        <span className="w-8 text-center">{selectedItems[key].quantity}</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleQuantityChange(key, selectedItems[key].quantity + 1);
-                          }}
-                          className="w-6 h-6 bg-gray-200 rounded flex items-center justify-center"
-                        >
-                          +
-                        </button>
+                  {isSelected && <span className="badge-discount">Selected</span>}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ItemImage itemName={item.name} />
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-semibold leading-tight text-[var(--text-primary)]">
+                            {item.name}
+                          </p>
+                          <p className="mt-1 text-[11px] text-[var(--text-muted)]">per {item.unit}</p>
+                        </div>
                       </div>
-                    )}
+                      <span className="whitespace-nowrap text-[15px] font-bold text-[var(--text-primary)]">
+                        ₹{item.price}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      {isSelected ? (
+                        <div className="quantity-control w-full flex items-center justify-between">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuantityChange(key, selectedItems[key].quantity - 1);
+                            }}
+                            className="hover:border-red-400 hover:text-red-500"
+                          >
+                            −
+                          </button>
+                          <span className="min-w-[24px] text-center text-sm font-bold">
+                            {selectedItems[key].quantity}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuantityChange(key, selectedItems[key].quantity + 1);
+                            }}
+                            className="hover:border-[var(--primary)] hover:text-[var(--primary)]"
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="w-full text-center text-[12px] font-semibold text-[var(--primary)]">✓ Tap to add</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -302,52 +299,6 @@ export default function HomePage() {
           </div>
         </div>
       ))}
-
-      {/* Order Summary */}
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">📝 Order Summary</h2>
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex justify-between py-2">
-            <span className="text-gray-600">Subtotal</span>
-            <span className="font-medium">₹{subtotal}</span>
-          </div>
-          <div className="flex justify-between py-2">
-            <span className="text-gray-600">Delivery Charges</span>
-            <span className="font-medium">₹{deliveryCharge}</span>
-          </div>
-          <div className="flex justify-between py-2 border-t border-gray-200 mt-2">
-            <span className="font-semibold text-lg">Total</span>
-            <span className="font-semibold text-lg text-primary-600">₹{total}</span>
-          </div>
-        </div>
-
-        {isLaunchDay && (
-          <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4 text-green-900">
-            <p className="text-sm font-semibold">🎉 Delivery free for today</p>
-            <p className="text-sm text-green-800">Sunday launch offer: enjoy zero delivery charges on all orders.</p>
-          </div>
-        )}
-      </div>
-
-      {/* Proceed Button */}
-      {!user && (
-        <p className="text-sm text-amber-700 mb-3">
-          Login is required before proceeding to payment.
-        </p>
-      )}
-      {ORDERS_CLOSED && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-red-800 font-medium">Orders for today are now closed.</p>
-          <p className="text-red-700 text-sm">Thank you for your support! We'll be back tomorrow to serve you again.</p>
-        </div>
-      )}
-      <button
-        onClick={handleProceedToPayment}
-        className="btn-primary"
-        disabled={loading || !user || ORDERS_CLOSED}
-      >
-        {!user ? 'Login to Continue' : loading ? 'Processing...' : ORDERS_CLOSED ? 'Orders Closed' : 'Proceed to Payment'}
-      </button>
     </div>
   );
 }

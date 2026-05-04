@@ -1,4 +1,4 @@
-// File: D:\coding\github\delivery_system\frontend\app\layout.tsx
+// File: C:\Users\pp\OneDrive\Desktop\rocket07\rocket07_frontend\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -29,7 +29,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') {
       const storedUser = localStorage.getItem('delivery_user');
       if (storedUser) {
-        setUser(JSON.parse(storedUser));
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch {
+          localStorage.removeItem('delivery_user');
+          localStorage.removeItem('delivery_token');
+        }
       }
     }
     setLoading(false);

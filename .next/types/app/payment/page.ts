@@ -1,4 +1,4 @@
-// File: D:\coding\github\delivery_system\frontend\app\payment\page.tsx
+// File: C:\Users\pp\OneDrive\Desktop\rocket07\rocket07_frontend\app\payment\page.tsx
 import * as entry from '../../../../app/payment/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
